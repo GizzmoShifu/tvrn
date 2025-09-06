@@ -9,6 +9,7 @@ import (
   "regexp"
   "strconv"
   "strings"
+  "runtime"
 
   "github.com/GizzmoShifu/tvrn/internal/config"
   "github.com/GizzmoShifu/tvrn/internal/logx"
@@ -102,6 +103,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
   if err != nil { return planner.Plan{}, planner.Stats{}, err }
 
   var plan planner.Plan
+  skipped := 0
   for _, ent := range entries {
     if ent.IsDir() { continue }
     name := ent.Name()
@@ -134,17 +136,24 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
       title,
     )
 
-    to := formatName(r.cfg.Rename.Scheme, r.cfg.Rename.Pad, r.cfg.Rename.MultiEP,
+    toName := formatName(r.cfg.Rename.Scheme, r.cfg.Rename.Pad, r.cfg.Rename.MultiEP,
       seriesName, p.Season, p.Episode, p.Episode2, title, p.Ext)
+
+    // Skip no-ops where the file is already correctly named
+    if sameFileName(name, toName) {
+      dbg("noop (already named): %q", name)
+      skipped++
+      continue
+    }
 
     plan.Items = append(plan.Items, planner.Item{
       From:   filepath.Join(root, name),
-      To:     filepath.Join(root, to),
+      To:     filepath.Join(root, toName),
       Reason: "rename",
     })
   }
 
-  st := planner.Stats{Total: len(plan.Items)}
+  st := planner.Stats{Total: len(plan.Items), Skipped: skipped}
   for _, it := range plan.Items {
     if _, err := os.Stat(it.To); err == nil { st.Collisions++ }
   }
@@ -256,4 +265,13 @@ func formatName(scheme string, pad int, multi string, _show string, season, ep, 
     return fmt.Sprintf("%s - %s.%s", epPart, cleanTitle, ext)
   }
   return fmt.Sprintf("%s.%s", epPart, ext)
+}
+
+// sameFileName returns true when the two basenames are the same.
+// Windows is case-insensitive; Unix is case-sensitive.
+func sameFileName(a, b string) bool {
+  if runtime.GOOS == "windows" {
+    return strings.EqualFold(a, b)
+  }
+  return a == b
 }
