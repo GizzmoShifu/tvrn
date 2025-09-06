@@ -90,7 +90,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
   eps, err := c.GetEpisodes(ctx, show.ID, r.cfg.Defaults.Order, seasonHint, r.cfg.Defaults.Lang)
   if err != nil { return planner.Plan{}, planner.Stats{}, err }
   if len(eps) == 0 {
-    // fetch all to compute available seasons and warn the user
+    // fetch all to compute available seasons and FAIL the run
     all, _ := r.tv.GetEpisodes(ctx, show.ID, r.cfg.Defaults.Order, 0, r.cfg.Defaults.Lang)
     seen := map[int]bool{}
     var seasons []int
@@ -101,12 +101,12 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
       }
     }
     sort.Ints(seasons)
-    r.log.Warnf("No episodes for season %d with order=%s. TVDB seasons available: %v", seasonHint, r.cfg.Defaults.Order, seasons)
     return planner.Plan{}, planner.Stats{}, fmt.Errorf(
       "no episodes for season %d with order=%s. TVDB seasons available: %v",
       seasonHint, r.cfg.Defaults.Order, seasons,
     )
   }
+
   r.debugf("picked series=%q id=%d order=%s season=%d; fetched episodes=%d",
     show.Name, show.ID, r.cfg.Defaults.Order, seasonHint, len(eps))
   for i := 0; i < len(eps) && i < 5; i++ {
@@ -114,7 +114,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
     r.debugf("api sample: S%02dE%02d -> %q", e.Season, e.Number, e.Title)
   }
 
-  // Index episodes by S/E
+  // Index episodes by S/E (we fetched a single season, but keep the key explicit)
   type key struct{ s, e int }
   bySE := map[key]tvdb.Episode{}
   for _, e := range eps { bySE[key{e.Season, e.Number}] = e }
@@ -139,15 +139,31 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
       continue
     }
 
-    title := ""
-    if e, ok := bySE[key{p.Season, p.Episode}]; ok {
-      title = e.Title
+    // Skip unknown episode numbers (and ranges) for this season/order
+    if _, ok := bySE[key{p.Season, p.Episode}]; !ok {
+      r.log.Warnf("unknown episode S%02dE%02d in %q; skipping", p.Season, p.Episode, name)
+      skipped++
+      continue
     }
     if p.Episode2 > 0 && p.Episode2 > p.Episode {
-      if e2, ok := bySE[key{p.Season, p.Episode2}]; ok && e2.Title != "" {
-        if title != "" { title = title + " + " + e2.Title } else { title = e2.Title }
+      if _, ok := bySE[key{p.Season, p.Episode2}]; !ok {
+        r.log.Warnf("unknown episode S%02dE%02d in %q; skipping range", p.Season, p.Episode2, name)
+        skipped++
+        continue
       }
     }
+
+    // Build title (now guaranteed to exist for both ends if range)
+    title := bySE[key{p.Season, p.Episode}].Title
+    if p.Episode2 > 0 && p.Episode2 > p.Episode {
+      t2 := bySE[key{p.Season, p.Episode2}].Title
+      if title != "" && t2 != "" {
+        title = title + " + " + t2
+      } else if t2 != "" {
+        title = t2
+      }
+    }
+
     r.debugf("file=%q parsed=S%02dE%02d%s title=%q",
       name, p.Season, p.Episode,
       func() string {
@@ -180,6 +196,9 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
   st := planner.Stats{Total: len(plan.Items), Skipped: skipped}
   for _, it := range plan.Items {
     if _, err := os.Stat(it.To); err == nil { st.Collisions++ }
+  }
+  if st.Total == 0 {
+    return planner.Plan{}, st, fmt.Errorf("no valid episodes found to rename (season %d, order=%s)", seasonHint, r.cfg.Defaults.Order)
   }
   return plan, st, nil
 }
