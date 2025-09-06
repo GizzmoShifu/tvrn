@@ -31,8 +31,10 @@ func New(cfg *config.Config, log *logx.Logger, tv tvdb.Client) *Runner {
   return &Runner{cfg: cfg, log: log, pins: p, tv: tv}
 }
 
-func dbg(format string, a ...any) {
-  if os.Getenv("TVRN_DEBUG") == "1" {
+func (r *Runner) Cfg() *config.Config { return r.cfg }
+
+func (r *Runner) debugf(format string, a ...any) {
+  if r.cfg.CLI.Debug {
     fmt.Fprintf(os.Stderr, "DEBUG "+format+"\n", a...)
   }
 }
@@ -86,11 +88,11 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
   // Fetch episodes for configured order and the current season only
   eps, err := c.GetEpisodes(ctx, show.ID, r.cfg.Defaults.Order, seasonHint, r.cfg.Defaults.Lang)
   if err != nil { return planner.Plan{}, planner.Stats{}, err }
-  dbg("picked series=%q id=%d order=%s season=%d; fetched episodes=%d",
+  r.debugf("picked series=%q id=%d order=%s season=%d; fetched episodes=%d",
     show.Name, show.ID, r.cfg.Defaults.Order, seasonHint, len(eps))
   for i := 0; i < len(eps) && i < 5; i++ {
     e := eps[i]
-    dbg("api sample: S%02dE%02d -> %q", e.Season, e.Number, e.Title)
+    r.debugf("api sample: S%02dE%02d -> %q", e.Season, e.Number, e.Title)
   }
 
   // Index episodes by S/E
@@ -114,7 +116,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
 
     p, ok := parse.FromFilename(name, seasonHint, "")
     if !ok {
-      dbg("parse miss: %q", name)
+      r.debugf("parse miss: %q", name)
       continue
     }
 
@@ -127,7 +129,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
         if title != "" { title = title + " + " + e2.Title } else { title = e2.Title }
       }
     }
-    dbg("file=%q parsed=S%02dE%02d%s title=%q",
+    r.debugf("file=%q parsed=S%02dE%02d%s title=%q",
       name, p.Season, p.Episode,
       func() string {
         if p.Episode2 > 0 { return fmt.Sprintf("-%02d", p.Episode2) }
@@ -141,7 +143,7 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
 
     // Skip no-ops where the file is already correctly named
     if sameFileName(name, toName) {
-      dbg("noop (already named): %q", name)
+      r.debugf("noop (already named): %q", name)
       skipped++
       continue
     }
