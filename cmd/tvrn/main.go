@@ -16,6 +16,12 @@ import (
   "github.com/GizzmoShifu/tvrn/internal/tvdb"
 )
 
+var (
+  version = "dev"
+  commit  = "none"
+  date    = "unknown"
+)
+
 func main() {
   cfg, err := config.Load()
   if err != nil { fatal(err) }
@@ -36,9 +42,11 @@ func main() {
   seriesMode := fs.Bool("series", false, "Run from a series root and process all season subfolders")
   noCache := fs.Bool("no-cache", false, "Ignore local API cache for this run")
   yes := fs.Bool("yes", false, "Auto-confirm (non-interactive)")
+  about := fs.Bool("about", false, "Show credits and licensing notices and exit")
+  ver := fs.Bool("version", false, "Show version and exit")
 
   fs.Usage = func() {
-    fmt.Fprintf(os.Stdout, "tvrn – TV renamer using TVDB v4\n\nUsage:\n  tvrn [options] [path]\n\nOptions:\n")
+    fmt.Fprintf(os.Stdout, "tvrn - TV renamer using TVDB v4\n\nUsage:\n  tvrn [options] [path]\n\nOptions:\n")
     fs.PrintDefaults()
     fmt.Fprintln(os.Stdout, `
 Examples:
@@ -81,6 +89,16 @@ Examples:
   cfg.CLI.NoCache = *noCache
   cfg.CLI.Yes = *yes
   cfg.CLI.Root = absRoot
+
+  if *about {
+    printAbout()
+    return
+  }
+
+  if *ver {
+    fmt.Printf("tvrn %s (commit %s, built %s)\n", version, commit, date)
+    return
+  }
 
   // Logging
   level := "info"
@@ -160,4 +178,18 @@ func fatal(err error) {
   fmt.Fprintf(os.Stderr, "error: %v\n", err)
   time.Sleep(10 * time.Millisecond)
   os.Exit(4)
+}
+
+func printAbout() {
+  const about = `tvrn %s - TV renamer (TVDB v4)
+
+Credits & Notices
+  • Metadata provided by TheTVDB.com (v4 API)
+  • This product is not endorsed or certified by TheTVDB
+  • https://thetvdb.com
+
+Licences
+  • Project licence: MIT (see LICENSE)
+`
+  fmt.Printf(about, version)
 }
