@@ -3,7 +3,7 @@ name: Release TVRN
 on:
   push:
     tags:
-      - '*.*.*'   # e.g. 0.1.0
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -20,16 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux,   goarch: amd64, ext: "",   archive: tar.gz }
-          - { goos: linux,   goarch: arm64, ext: "",   archive: tar.gz }
-          - { goos: darwin,  goarch: amd64, ext: "",   archive: tar.gz }
-          - { goos: darwin,  goarch: arm64, ext: "",   archive: tar.gz }
+          - { goos: linux,   goarch: amd64, ext: "",    archive: tar.gz }
+          - { goos: linux,   goarch: arm64, ext: "",    archive: tar.gz }
+          - { goos: darwin,  goarch: amd64, ext: "",    archive: tar.gz }
+          - { goos: darwin,  goarch: arm64, ext: "",    archive: tar.gz }
           - { goos: windows, goarch: amd64, ext: ".exe", archive: zip }
 
     env:
       CGO_ENABLED: "0"
       VERSION: ${{ github.ref_name }}
-      SHORT_SHA: ${{ github.sha.substr(0,7) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +41,7 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      # --- Trivy FS scan (fails on HIGH/CRITICAL) ---
+      # Trivy filesystem scan
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@0.20.0
         with:
@@ -54,7 +53,12 @@ jobs:
           exit-code: '1'
           format: table
           skip-dirs: dist
-          # Equivalent to: trivy fs --scanners vuln,secret --vuln-type os,library --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 --skip-dirs dist .
+
+      - name: Compute build vars
+        id: vars
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: |
@@ -64,8 +68,8 @@ jobs:
           go build -trimpath \
             -ldflags "-s -w \
               -X main.version=${VERSION} \
-              -X main.commit=${SHORT_SHA} \
-              -X main.date=$(date -u +%Y-%m-%d)" \
+              -X main.commit=${{ steps.vars.outputs.short_sha }} \
+              -X main.date=${{ steps.vars.outputs.build_date }}" \
             -o "dist/bin/${OUT}" ./cmd/tvrn
 
       - name: Package
@@ -85,7 +89,7 @@ jobs:
           fi
           rm -rf "${NAME}"
 
-      - name: Upload artefact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-bundles
