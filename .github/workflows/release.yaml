@@ -106,8 +106,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release-bundles-*
+          pattern: release-bundles-*
           path: dist
+          merge-multiple: true
 
       - name: Generate checksums
         run: |
