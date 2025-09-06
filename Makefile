@@ -1,5 +1,4 @@
-APP := tvdb
-SMOKE := smoke-tvdb
+APP := tvrn
 PKG := github.com/GizzmoShifu/tvrn
 
 .PHONY: all build run test tidy smoke
@@ -7,8 +6,7 @@ PKG := github.com/GizzmoShifu/tvrn
 all: build
 
 build:
-\tgo build -o bin/$(APP) ./cmd/tvdb
-\tgo build -o bin/$(SMOKE) ./cmd/smoke-tvdb
+\tgo build -o bin/$(APP) ./cmd/tvrn
 
 run: build
 \t./bin/$(APP)
