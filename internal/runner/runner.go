@@ -89,6 +89,24 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
   // Fetch episodes for configured order and the current season only
   eps, err := c.GetEpisodes(ctx, show.ID, r.cfg.Defaults.Order, seasonHint, r.cfg.Defaults.Lang)
   if err != nil { return planner.Plan{}, planner.Stats{}, err }
+  if len(eps) == 0 {
+    // fetch all to compute available seasons and warn the user
+    all, _ := r.tv.GetEpisodes(ctx, show.ID, r.cfg.Defaults.Order, 0, r.cfg.Defaults.Lang)
+    seen := map[int]bool{}
+    var seasons []int
+    for _, e := range all {
+      if e.Season > 0 && !seen[e.Season] {
+        seen[e.Season] = true
+        seasons = append(seasons, e.Season)
+      }
+    }
+    sort.Ints(seasons)
+    r.log.Warnf("No episodes for season %d with order=%s. TVDB seasons available: %v", seasonHint, r.cfg.Defaults.Order, seasons)
+    return planner.Plan{}, planner.Stats{}, fmt.Errorf(
+      "no episodes for season %d with order=%s. TVDB seasons available: %v",
+      seasonHint, r.cfg.Defaults.Order, seasons,
+    )
+  }
   r.debugf("picked series=%q id=%d order=%s season=%d; fetched episodes=%d",
     show.Name, show.ID, r.cfg.Defaults.Order, seasonHint, len(eps))
   for i := 0; i < len(eps) && i < 5; i++ {
