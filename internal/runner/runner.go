@@ -20,6 +20,12 @@ import (
   "github.com/GizzmoShifu/tvrn/internal/tvdb"
 )
 
+var (
+  reParen2 = regexp.MustCompile(`^\s*(.+?)\s*\((\d+)\)\s*\+\s*(.+?)\s*\((\d+)\)\s*$`)
+  rePart2  = regexp.MustCompile(`(?i)^\s*(.+?)\s*(?:-|—|\s)?\s*part\s*(\d+)\s*\+\s*(.+?)\s*(?:-|—|\s)?\s*part\s*(\d+)\s*$`)
+  seasonDirRe = regexp.MustCompile(`(?i)^s(eason)?\s*0?\d+$|^specials$`)
+)
+
 type Runner struct {
   cfg  *config.Config
   log  *logx.Logger
@@ -39,8 +45,6 @@ func (r *Runner) debugf(format string, a ...any) {
     fmt.Fprintf(os.Stderr, "DEBUG "+format+"\n", a...)
   }
 }
-
-var seasonDirRe = regexp.MustCompile(`(?i)^s(eason)?\s*0?\d+$|^specials$`)
 
 func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.Stats, error) {
   // Work out series name and season hint from the path
@@ -210,6 +214,7 @@ func (r *Runner) PrintPreview(p planner.Plan, detailed bool) {
     if items[i].E1 != items[j].E1 { return items[i].E1 < items[j].E1 }
     return items[i].E2 < items[j].E2
   })
+  fmt.Println()
   for _, it := range items {
     if detailed {
       fmt.Printf("%s -> %s\n", filepath.Base(it.From), filepath.Base(it.To))
@@ -220,7 +225,7 @@ func (r *Runner) PrintPreview(p planner.Plan, detailed bool) {
 }
 
 func (r *Runner) Confirm(in io.Reader, out io.Writer, n int) (bool, error) {
-  return confirm(in, out, n, r.cfg.Defaults.ConfirmationStrict)
+  return confirm(in, out, n)
 }
 
 type ApplyResult struct{ Total, Errors int }
@@ -283,13 +288,20 @@ func formatName(scheme string, pad int, multi string, _show string, season, ep, 
   if ep2 > 0 && ep2 > ep {
     if multi == "" || strings.EqualFold(multi, "range") {
       epPart = epPart + "-" + secondInRange(scheme, pad, ep2)
-      cleanTitle := strings.TrimSpace(title)
-      cleanTitle = strings.NewReplacer("/", "-", "\\", "-", ":", " -", "*", "", "?", "", "\"", "'", "<", "(", ">", ")", "|", "-", "\n", " ", "\r", " ").Replace(cleanTitle)
+
+      // Try to collapse "Base (1) + Base (2)" or "Base Part 1 + Base Part 2" → "Base (1-2)"
+      rawTitle := strings.TrimSpace(title)
+      if collapsed, ok := collapseTwoPartJoined(rawTitle); ok {
+        rawTitle = collapsed
+      }
+
+      cleanTitle := sanitiseTitle(rawTitle)
       if cleanTitle != "" {
         return fmt.Sprintf("%s - %s.%s", epPart, cleanTitle, ext)
       }
       return fmt.Sprintf("%s.%s", epPart, ext)
     }
+
     // join mode: 1x01x02 or S01E01E02
     switch scheme {
     case "SXXEYY", "sXXeYY":
@@ -301,14 +313,7 @@ func formatName(scheme string, pad int, multi string, _show string, season, ep, 
   }
 
   cleanTitle := strings.TrimSpace(title)
-  cleanTitle = strings.NewReplacer(
-    "/", "-", "\\", "-",
-    ":", " -", "*", "",
-    "?", "", "\"", "'",
-    "<", "(", ">", ")",
-    "|", "-", "\n", " ",
-    "\r", " ",
-  ).Replace(cleanTitle)
+  cleanTitle = sanitiseTitle(cleanTitle)
 
   if cleanTitle != "" {
     return fmt.Sprintf("%s - %s.%s", epPart, cleanTitle, ext)
@@ -323,4 +328,48 @@ func sameFileName(a, b string) bool {
     return strings.EqualFold(a, b)
   }
   return a == b
+}
+
+func collapseTwoPartJoined(s string) (string, bool) {
+  if m := reParen2.FindStringSubmatch(s); m != nil {
+    b1, n1, b2, n2 := strings.TrimSpace(m[1]), m[2], strings.TrimSpace(m[3]), m[4]
+    if strings.EqualFold(b1, b2) && n1 == "1" && n2 == "2" {
+      return b1 + " (1-2)", true
+    }
+  }
+  if m := rePart2.FindStringSubmatch(s); m != nil {
+    b1, n1, b2, n2 := strings.TrimSpace(m[1]), m[2], strings.TrimSpace(m[3]), m[4]
+    if strings.EqualFold(b1, b2) && n1 == "1" && n2 == "2" {
+      return b1 + " (1-2)", true
+    }
+  }
+  return "", false
+}
+
+func stripPartSuffix(t, part string) (string, bool) {
+  s := strings.TrimSpace(t)
+  c := strings.ToLower(s)
+  suffixes := []string{
+    " (" + part + ")",
+    " part " + part,
+    " - part " + part,
+  }
+  for _, suf := range suffixes {
+    if strings.HasSuffix(c, suf) {
+      return strings.TrimSpace(s[:len(s)-len(suf)]), true
+    }
+  }
+  return "", false
+}
+
+func sanitiseTitle(s string) string {
+  s = strings.TrimSpace(s)
+  return strings.NewReplacer(
+    "/", "-", "\\", "-",
+    ":", " -", "*", "",
+    "?", "", "\"", "'",
+    "<", "(", ">", ")",
+    "|", "-", "\n", " ",
+    "\r", " ",
+  ).Replace(s)
 }
