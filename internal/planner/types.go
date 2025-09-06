@@ -13,6 +13,9 @@ type Item struct {
   From     string
   To       string
   Reason   string // e.g. rename, collision-skip
+  S        int    // season (for sorting)
+  E1       int    // first episode (for sorting)
+  E2       int    // second episode if range, else 0 (for sorting)
 }
 
 type Plan struct {

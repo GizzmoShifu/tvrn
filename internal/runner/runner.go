@@ -7,6 +7,7 @@ import (
   "os"
   "path/filepath"
   "regexp"
+  "sort"
   "strconv"
   "strings"
   "runtime"
@@ -152,6 +153,9 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
       From:   filepath.Join(root, name),
       To:     filepath.Join(root, toName),
       Reason: "rename",
+      S:      p.Season,
+      E1:     p.Episode,
+      E2:     p.Episode2,
     })
   }
 
@@ -163,7 +167,13 @@ func (r *Runner) Plan(ctx context.Context, root string) (planner.Plan, planner.S
 }
 
 func (r *Runner) PrintPreview(p planner.Plan, detailed bool) {
-  for _, it := range p.Items {
+  items := append([]planner.Item(nil), p.Items...) // work on a copy
+  sort.Slice(items, func(i, j int) bool {
+    if items[i].S != items[j].S { return items[i].S < items[j].S }
+    if items[i].E1 != items[j].E1 { return items[i].E1 < items[j].E1 }
+    return items[i].E2 < items[j].E2
+  })
+  for _, it := range items {
     if detailed {
       fmt.Printf("%s -> %s\n", filepath.Base(it.From), filepath.Base(it.To))
     } else {
