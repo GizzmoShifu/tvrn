@@ -3,7 +3,7 @@ name: Release TVRN
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - '*.*.*'
 
 permissions:
   contents: write
